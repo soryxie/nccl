@@ -2,6 +2,14 @@
 
 Optimized primitives for inter-GPU communication.
 
+## [NEW] plot traffic
+
+```
+python3 analyse.py <path/to/nccl_ib_log.bin> --output ./figure_both.png --direction both
+python3 analyse.py <path/to/nccl_ib_log.bin> --output ./figure_send.png --direction send
+python3 analyse.py <path/to/nccl_ib_log.bin> --output ./figure_recv.png --direction recv
+```
+
 ## Introduction
 
 NCCL (pronounced "Nickel") is a stand-alone library of standard communication routines for GPUs, implementing all-reduce, all-gather, reduce, broadcast, reduce-scatter, as well as any send/receive based communication pattern. It has been optimized to achieve high bandwidth on platforms using PCIe, NVLink, NVswitch, as well as networking using InfiniBand Verbs or TCP/IP sockets. NCCL supports an arbitrary number of GPUs installed in a single node or across multiple nodes, and can be used in either single- or multi-process (e.g., MPI) applications.
