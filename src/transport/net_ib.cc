@@ -32,6 +32,35 @@
 #endif
 #include "ib_trace.h"
 
+#if defined(IB_TRACE_ENABLE)
+static void ncclIbTraceLogConfigOnce() {
+  static int logged = 0;
+  if (logged) return;
+  logged = 1;
+
+  const char* path = getenv("NCCL_IB_TRACE_FILE");
+#ifdef ENABLE_TRACE
+  if (path && path[0]) {
+    INFO(NCCL_NET,
+         "IB tracer enabled (IB_TRACE_ENABLE=1). Ring buffer capacity=%u records. NCCL_IB_TRACE_FILE=\"%s\"",
+         IB_TRACE_CAPACITY, path);
+  } else {
+    INFO(NCCL_NET,
+         "IB tracer compiled in (IB_TRACE_ENABLE=1) but NCCL_IB_TRACE_FILE is not set. No trace dump will be written.");
+  }
+#else
+  if (path && path[0]) {
+    fprintf(stderr,
+            "NCCL_IB_TRACE: enabled (IB_TRACE_ENABLE=1). Ring buffer capacity=%u records. NCCL_IB_TRACE_FILE=\"%s\"\n",
+            IB_TRACE_CAPACITY, path);
+  } else {
+    fprintf(stderr,
+            "NCCL_IB_TRACE: compiled in (IB_TRACE_ENABLE=1) but NCCL_IB_TRACE_FILE not set; no trace dump will be written.\n");
+  }
+#endif
+}
+#endif
+
 #define MAXSUFFIXSIZE 16
 #define MAXNAMESIZE (64 + MAXSUFFIXSIZE)
 static char ncclIbIfName[MAX_IF_NAME_SIZE+1];
@@ -854,6 +883,9 @@ ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config
   ncclResult_t ret = ncclSuccess;
   ncclNetCommConfig_t* netCommConfig = nullptr;
   NCCLCHECK(ncclIbInitDevices(logFunction, profFunction));
+#if defined(IB_TRACE_ENABLE)
+  ncclIbTraceLogConfigOnce();
+#endif
   NCCLCHECK(ncclCalloc(&netCommConfig, 1));
   netCommConfig->trafficClass = config->trafficClass;
   *ctx = (void *)netCommConfig;

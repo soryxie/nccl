@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -75,9 +76,17 @@ static void ib_trace_dump_to_file(const char* path) {
   uint64_t cap = IB_TRACE_CAPACITY;
   uint64_t count = total < cap ? total : cap;
   if (count == 0) return;
+  fprintf(stderr,
+          "NCCL_IB_TRACE: dumping %llu records to \"%s\".\n",
+          (unsigned long long)count, path);
 
   int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-  if (fd < 0) return;
+  if (fd < 0) {
+    fprintf(stderr,
+            "NCCL_IB_TRACE: failed to open \"%s\" for writing: %s\n",
+            path, strerror(errno));
+    return;
+  }
 
   IbTraceFileHeader header;
   memset(&header, 0, sizeof(header));
@@ -104,6 +113,9 @@ static void ib_trace_dump_to_file(const char* path) {
   }
 
   close(fd);
+  fprintf(stderr,
+          "NCCL_IB_TRACE: dump to \"%s\" completed (header + %llu records).\n",
+          path, (unsigned long long)count);
 }
 
 void ib_trace_dump_from_env(const char* env_name) {
