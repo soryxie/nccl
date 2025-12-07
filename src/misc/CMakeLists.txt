@@ -14,6 +14,7 @@ set(MISC_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/argcheck.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/gdrwrap.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/ibvsymbols.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/ib_trace.cc
 )
 
 # Add misc sources to parent scope

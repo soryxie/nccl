@@ -27,6 +27,10 @@
 
 #include "ibvwrap.h"
 #include "mlx5/mlx5dvwrap.h"
+#if defined(NCCL_IB_TRACE) && !defined(IB_TRACE_ENABLE)
+#define IB_TRACE_ENABLE 1
+#endif
+#include "ib_trace.h"
 
 #define MAXSUFFIXSIZE 16
 #define MAXNAMESIZE (64 + MAXSUFFIXSIZE)
@@ -2151,6 +2155,13 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     }
 
     struct ibv_send_wr* bad_wr;
+#ifdef IB_TRACE_ENABLE
+    uint32_t traceSize = 0;
+    for (int r = 0; r < nreqs; r++) traceSize += comm->sges[r].length;
+    uint32_t traceExtra = (nreqs == 1) ? (uint32_t)slots[0].tag : (uint32_t)nreqs;
+    IB_TRACE_POST_SEND(lastWr->wr_id, traceSize, devIndex,
+                       qp->qp->qp_num, lastWr->opcode, traceExtra);
+#endif
 #ifdef NCCL_ENABLE_NET_PROFILING
     // QP profiling loop
     for (int r=0; r<nreqs; r++) {
@@ -2411,6 +2422,10 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
       req->pInfo[r].nEventHandles++;
     }
 #endif
+#ifdef IB_TRACE_ENABLE
+    IB_TRACE_POST_RECV(wr.wr_id, 0, qp->devIndex, qp->qp->qp_num,
+                       IBV_WR_RECV, (uint32_t)n);
+#endif
     NCCLCHECK(wrap_ibv_post_recv(qp->qp, &wr, &bad_wr));
     comm->base.qpIndex = (comm->base.qpIndex+1)%comm->base.nqps;
   }
@@ -2550,6 +2565,9 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
           union ncclSocketAddress addr;
           ncclSocketGetAddr(r->sock, &addr);
           struct ncclIbRequest* req = r->base->reqs+(wc->wr_id & 0xff);
+#ifdef IB_TRACE_ENABLE
+          int traceDevIndex = (r->devBases[i] != NULL) ? r->devBases[i]->ibDevN : 0;
+#endif
 
           #ifdef ENABLE_TRACE
           char line[SOCKET_NAME_MAXLEN+1];
@@ -2557,6 +2575,10 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
             ncclSocketToString(&addr, line), wc->status, wc->opcode,wc->byte_len, wc->wr_id, req, req->type, req->events[0], req->events[1], req->events[2], req->events[3], i);
           #endif
           if (req && req->type == NCCL_NET_IB_REQ_SEND) {
+#ifdef IB_TRACE_ENABLE
+            uint32_t traceSize = 0;
+            uint32_t traceExtra = req->nreqs;
+#endif
             for (int j = 0; j < req->nreqs; j++) {
               struct ncclIbRequest* sendReq = r->base->reqs+((wc->wr_id >> (j*8)) & 0xff);
               if ((sendReq->events[i] <= 0)) {
@@ -2569,7 +2591,14 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
               int qpIndex = getReqQpIndex(sendReq, j, wc->qp_num);
               NCCLCHECK(ncclProfilerFunction(&sendReq->pInfo[j].qpEventHandles[qpIndex], ncclProfilerNetEventStop, NULL, 0, NULL));
 #endif
+#ifdef IB_TRACE_ENABLE
+              if (sendReq) traceSize += sendReq->send.size;
+#endif
             }
+#ifdef IB_TRACE_ENABLE
+            IB_TRACE_COMPLETE(wc->wr_id, traceSize, traceDevIndex, wc->qp_num,
+                              wc->opcode, wc->status, 1, traceExtra);
+#endif
           } else {
             if (req && wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
               if (req->type != NCCL_NET_IB_REQ_RECV) {
@@ -2587,6 +2616,15 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
               int qpIndex = getReqQpIndex(req, j, wc->qp_num);
               NCCLCHECK(ncclProfilerFunction(&req->pInfo[j].qpEventHandles[qpIndex], ncclProfilerNetEventStop, NULL, 0, NULL));
             }
+#endif
+#ifdef IB_TRACE_ENABLE
+            uint32_t traceSize = wc->byte_len;
+            if (req && wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM && req->nreqs == 1) {
+              traceSize = req->recv.sizes[0];
+            }
+            uint32_t traceExtra = req ? req->nreqs : 0;
+            IB_TRACE_COMPLETE(wc->wr_id, traceSize, traceDevIndex, wc->qp_num,
+                              wc->opcode, wc->status, 0, traceExtra);
 #endif
           }
         }
@@ -2660,6 +2698,12 @@ ncclResult_t ncclIbFinalize(void* ctx) {
   free(ctx);
   return ncclIbFinalizeDevices();
 }
+
+#ifdef IB_TRACE_ENABLE
+static void __attribute__((destructor)) ncclIbTraceAutoDump() {
+  ib_trace_dump_from_env("NCCL_IB_TRACE_FILE");
+}
+#endif
 
 ncclNet_t ncclNetIb = {
   "IB",
