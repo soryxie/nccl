@@ -2424,7 +2424,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
 #endif
 #ifdef IB_TRACE_ENABLE
     IB_TRACE_POST_RECV(wr.wr_id, 0, qp->devIndex, qp->qp->qp_num,
-                       IBV_WR_RECV, (uint32_t)n);
+                       IBV_WC_RECV, (uint32_t)n);
 #endif
     NCCLCHECK(wrap_ibv_post_recv(qp->qp, &wr, &bad_wr));
     comm->base.qpIndex = (comm->base.qpIndex+1)%comm->base.nqps;
