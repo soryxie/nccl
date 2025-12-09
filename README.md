@@ -5,9 +5,8 @@ Optimized primitives for inter-GPU communication.
 ## [NEW] plot traffic
 
 ```
-python3 analyse.py <path/to/nccl_ib_log.bin> --output ./figure_both.png --direction both
-python3 analyse.py <path/to/nccl_ib_log.bin> --output ./figure_send.png --direction send
-python3 analyse.py <path/to/nccl_ib_log.bin> --output ./figure_recv.png --direction recv
+python3 tools/ib_bin_stat.py <path/to/nccl_ib_log.bin> --output ./bin_both.png --direction both
+python3 tools/ib_handle_scatters.py <path/to/nccl_ib_log.bin> --output ./dot_both.png --direction both
 ```
 
 ## Introduction
