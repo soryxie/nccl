@@ -39,25 +39,44 @@ static void ncclIbTraceLogConfigOnce() {
   logged = 1;
 
   const char* path = getenv("NCCL_IB_TRACE_FILE");
+  const char* async_env = getenv("NCCL_IB_TRACE_ASYNC");
+  int async_mode = async_env && (strcmp(async_env, "1") == 0 || strcmp(async_env, "true") == 0);
+
 #ifdef ENABLE_TRACE
   if (path && path[0]) {
-    INFO(NCCL_NET,
-         "IB tracer enabled (IB_TRACE_ENABLE=1). Ring buffer capacity=%u records. NCCL_IB_TRACE_FILE=\"%s\"",
-         IB_TRACE_CAPACITY, path);
+    if (async_mode) {
+      INFO(NCCL_NET,
+           "IB tracer enabled (ASYNC mode). flush_interval from NCCL_IB_TRACE_FLUSH_MS or default. NCCL_IB_TRACE_FILE=\"%s\"",
+           path);
+    } else {
+      INFO(NCCL_NET,
+           "IB tracer enabled (IB_TRACE_ENABLE=1). Ring buffer capacity=%u records. NCCL_IB_TRACE_FILE=\"%s\"",
+           IB_TRACE_CAPACITY, path);
+    }
   } else {
     INFO(NCCL_NET,
          "IB tracer compiled in (IB_TRACE_ENABLE=1) but NCCL_IB_TRACE_FILE is not set. No trace dump will be written.");
   }
 #else
   if (path && path[0]) {
-    fprintf(stderr,
-            "NCCL_IB_TRACE: enabled (IB_TRACE_ENABLE=1). Ring buffer capacity=%u records. NCCL_IB_TRACE_FILE=\"%s\"\n",
-            IB_TRACE_CAPACITY, path);
+    if (async_mode) {
+      fprintf(stderr,
+              "NCCL_IB_TRACE: enabled (ASYNC mode). NCCL_IB_TRACE_FILE=\"%s\"\n", path);
+    } else {
+      fprintf(stderr,
+              "NCCL_IB_TRACE: enabled (IB_TRACE_ENABLE=1). Ring buffer capacity=%u records. NCCL_IB_TRACE_FILE=\"%s\"\n",
+              IB_TRACE_CAPACITY, path);
+    }
   } else {
     fprintf(stderr,
             "NCCL_IB_TRACE: compiled in (IB_TRACE_ENABLE=1) but NCCL_IB_TRACE_FILE not set; no trace dump will be written.\n");
   }
 #endif
+
+  // 如果启用异步模式，启动后台线程
+  if (async_mode && path && path[0]) {
+    ib_trace_start_async("NCCL_IB_TRACE_FILE", 0);
+  }
 }
 #endif
 
@@ -2732,8 +2751,33 @@ ncclResult_t ncclIbFinalize(void* ctx) {
 }
 
 #ifdef IB_TRACE_ENABLE
+#include <signal.h>
+
+static volatile sig_atomic_t ncclIbTraceDumped = 0;
+
+static void ncclIbTraceDumpOnce() {
+  if (__atomic_exchange_n(&ncclIbTraceDumped, 1, __ATOMIC_SEQ_CST) == 0) {
+    // 先停止异步线程（如果有的话）
+    ib_trace_stop_async();
+    // 然后同步 dump（如果没有使用异步模式，这会保存数据）
+    ib_trace_dump_from_env("NCCL_IB_TRACE_FILE");
+  }
+}
+
+static void ncclIbTraceSignalHandler(int sig) {
+  ncclIbTraceDumpOnce();
+  // 恢复默认信号处理并重新发送信号
+  signal(sig, SIG_DFL);
+  raise(sig);
+}
+
+static void __attribute__((constructor)) ncclIbTraceSetupSignalHandlers() {
+  signal(SIGINT, ncclIbTraceSignalHandler);
+  signal(SIGTERM, ncclIbTraceSignalHandler);
+}
+
 static void __attribute__((destructor)) ncclIbTraceAutoDump() {
-  ib_trace_dump_from_env("NCCL_IB_TRACE_FILE");
+  ncclIbTraceDumpOnce();
 }
 #endif
 
